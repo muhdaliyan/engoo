@@ -1,0 +1,28 @@
+# Netlify Configuration File
+# Documentation: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  # The directory containing the built static files
+  publish = "dist"
+  
+  # The build command to run
+  command = "npm run build"
+
+# SPA routing redirect rule:
+# Rewrites all requests that don't match static files to /index.html 
+# so React Router / SPA routing works perfectly.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# API Proxy redirect (optional):
+# If you host your Express backend elsewhere (e.g. Render, Fly.io, or AWS), 
+# uncomment the rule below and replace the 'to' URL with your backend server URL.
+# This avoids CORS issues and maps client /api requests directly.
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://your-backend-url.onrender.com/api/:splat"
+#   status = 200
+#   force = true

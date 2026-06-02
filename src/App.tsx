@@ -137,7 +137,7 @@ export default function App() {
             <div></div> {/* Empty spacer to balance center alignment */}
             <div className="flex flex-col items-center text-center">
               <h1 className="text-xl font-extrabold tracking-tight text-stone-900">
-                Engolearn
+                Engooo
               </h1>
               <p className="text-[11px] font-mono text-stone-500 uppercase tracking-widest mt-0.5">
                 Real-Time Tense Synthesis & Grammar Alignment
