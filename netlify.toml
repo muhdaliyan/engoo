@@ -7,22 +7,27 @@
   
   # The build command to run
   command = "npm run build"
+  
+  # Netlify Functions directory
+  functions = "netlify/functions"
 
-# SPA routing redirect rule:
-# Rewrites all requests that don't match static files to /index.html 
-# so React Router / SPA routing works perfectly.
+# Route /api/grammar-check → Netlify Function
+[[redirects]]
+  from = "/api/grammar-check"
+  to = "/.netlify/functions/grammar-check"
+  status = 200
+  force = true
+
+# Route /api/conjugate → Netlify Function
+[[redirects]]
+  from = "/api/conjugate"
+  to = "/.netlify/functions/conjugate"
+  status = 200
+  force = true
+
+# SPA routing redirect rule (must come LAST):
+# Rewrites all other requests to /index.html for React Router.
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-# API Proxy redirect (optional):
-# If you host your Express backend elsewhere (e.g. Render, Fly.io, or AWS), 
-# uncomment the rule below and replace the 'to' URL with your backend server URL.
-# This avoids CORS issues and maps client /api requests directly.
-#
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://your-backend-url.onrender.com/api/:splat"
-#   status = 200
-#   force = true
