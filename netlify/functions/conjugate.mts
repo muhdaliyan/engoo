@@ -33,11 +33,11 @@ export default async (req: Request, context: Context) => {
   const localResult = conjugateRegular(cleanVerb);
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify(localResult), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (!apiKey || apiKey.includes('YOUR_OPENAI_API_KEY')) {
+    return new Response(
+      JSON.stringify({ error: "AI Grid requires a valid OPENAI_API_KEY configured in Netlify environment variables." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -97,16 +97,11 @@ You MUST respond with a JSON object matching this schema:
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (apiError) {
-    console.error(
-      "OpenAI conjugation failed, falling back to logic:",
-      apiError
+  } catch (apiError: any) {
+    console.error("OpenAI conjugation failed:", apiError);
+    return new Response(
+      JSON.stringify({ error: `OpenAI API call failed: ${apiError.message}` }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
-
-  // Fallback to local rule-based results
-  return new Response(JSON.stringify(localResult), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
 };

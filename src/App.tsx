@@ -133,13 +133,21 @@ export default function App() {
       });
       if (response.ok) {
         const data = await response.json();
-        setActiveVerb(data);
+        if (data.aiConjugations && data.aiConjugations.length > 0) {
+          setActiveVerb(data);
+          setActiveTab('matrix');
+        } else {
+          alert("The server returned conjugation data without an AI Grid. Showing local fallback instead.");
+          setActiveTab('matrix');
+        }
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        alert(`AI Grid Error: ${errData.error || 'Failed to fetch AI grid.'}`);
       }
-    } catch {
-      // keep current local data on failure
+    } catch (err: any) {
+      alert(`Network error: ${err.message || 'Failed to contact the server.'}`);
     } finally {
       setAiGridLoading(false);
-      setActiveTab('matrix');
     }
   };
 

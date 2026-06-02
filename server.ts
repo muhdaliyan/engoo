@@ -68,9 +68,9 @@ app.post('/api/conjugate', async (req, res) => {
     // First, look up through our local rule-based system
     const localResult = conjugateRegular(cleanVerb);
 
-    // If no API key is present, return the local rule-based result immediately
-    if (!apiKey) {
-      return res.json(localResult);
+    // Check if API key is present and not the placeholder
+    if (!apiKey || apiKey.includes('YOUR_OPENAI_API_KEY')) {
+      return res.status(400).json({ error: 'AI Grid requires a valid OPENAI_API_KEY configured in your local .env file.' });
     }
 
     // Otherwise, we query OpenAI to get the custom tense grid
@@ -108,12 +108,11 @@ You MUST respond with a JSON object matching this schema:
         const data = JSON.parse(responseText.trim());
         return res.json(data);
       }
-    } catch (apiError) {
-      console.error('OpenAI conjugation failed, falling back to rule-based logic:', apiError);
+      throw new Error('Empty response from OpenAI');
+    } catch (apiError: any) {
+      console.error('OpenAI conjugation failed:', apiError);
+      return res.status(500).json({ error: `OpenAI API call failed: ${apiError.message}` });
     }
-
-    // Fallback to local rule-based results in case of error
-    return res.json(localResult);
   } catch (err: any) {
     console.error('Conjugation endpoint error:', err);
     res.status(500).json({ error: err.message || 'Internal Server Error' });
