@@ -78,6 +78,11 @@ app.post('/api/conjugate', async (req, res) => {
       const prompt = `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb.
 Also, generate the list of all 12 English tense conjugations (aiConjugations) customized specifically for this verb, including structural formulas displaying the verb, usage explanations, and examples for each of the subject pronouns: 'I', 'You', 'He/She/It', 'We', 'They'.
 
+CRITICAL PERFORMANCE REQUIREMENT:
+- Keep all "explanation" fields extremely short, simple, and concise (maximum 8-10 words).
+- Keep all "text" example sentences very short and simple (maximum 5-6 words).
+This is crucial to minimize API output generation latency and avoid network timeout limits.
+
 You MUST respond with a JSON object matching this schema:
 {
   "v1": string, // Base / Infinitive form. e.g. write, play
