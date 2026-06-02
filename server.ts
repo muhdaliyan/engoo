@@ -1,0 +1,221 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import express from 'express';
+import path from 'path';
+import dotenv from 'dotenv';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type } from '@google/genai';
+import { conjugateRegular } from './src/conjugator';
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+// Initialize Google Gemini Client on the server
+const apiKey = process.env.GEMINI_API_KEY;
+let aiClient: GoogleGenAI | null = null;
+
+function getGeminiClient() {
+  if (!aiClient) {
+    if (!apiKey) {
+      console.warn("WARNING: GEMINI_API_KEY environment variable is not set. All AI operations will be skipped or simulated.");
+      return null;
+    }
+    aiClient = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
+
+app.use(express.json());
+
+// API endpoints
+
+// Verb conjugation endpoint - merges fast local heuristic with smart Gemini check
+app.post('/api/conjugate', async (req, res) => {
+  try {
+    const { verb } = req.body;
+    if (!verb || typeof verb !== 'string') {
+      return res.status(400).json({ error: 'Verb parameter is required' });
+    }
+
+    const cleanVerb = verb.trim().toLowerCase();
+    
+    // First, look up through our local rule-based system
+    const localResult = conjugateRegular(cleanVerb);
+
+    // If it's found locally as a known irregular verb, or if no API key is present, return immediately
+    const ai = getGeminiClient();
+    if (localResult.isIrregular || !ai) {
+      return res.json(localResult);
+    }
+
+    // Otherwise, we can double check with Gemini to see if it is a rare irregular or confirm regular forms
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Provide the first, second, third, present participle, and third-person singular forms for the English verb: "${cleanVerb}". Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false.`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              v1: { type: Type.STRING, description: "Base / Infinitive form. e.g. write, play" },
+              v2: { type: Type.STRING, description: "Past simple form (V2). e.g. wrote, played" },
+              v3: { type: Type.STRING, description: "Past participle form (V3). e.g. written, played" },
+              v4: { type: Type.STRING, description: "Present participle (-ing) form. e.g. writing, playing" },
+              v5: { type: Type.STRING, description: "Third person singular (-s/-es) form. e.g. writes, plays" },
+              isIrregular: { type: Type.BOOLEAN, description: "Is this verb classified as an irregular verb in English?" }
+            },
+            required: ["v1", "v2", "v3", "v4", "v5", "isIrregular"]
+          }
+        }
+      });
+
+      const responseText = response.text;
+      if (responseText) {
+        const data = JSON.parse(responseText.trim());
+        return res.json(data);
+      }
+    } catch (apiError) {
+      console.error('Gemini conjugation failed, falling back to rule-based logic:', apiError);
+    }
+
+    // Fallback to local rule-based results in case of error
+    return res.json(localResult);
+  } catch (err: any) {
+    console.error('Conjugation endpoint error:', err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+});
+
+// Sentence grammar check and analysis API endpoint using Gemini
+app.post('/api/grammar-check', async (req, res) => {
+  try {
+    const { sentence } = req.body;
+    if (!sentence || typeof sentence !== 'string') {
+      return res.status(400).json({ error: 'Sentence parameter is required' });
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      // In absence of API key, provide a friendly warning simulation
+      return res.json({
+        isValid: true,
+        originalText: sentence,
+        correctedText: sentence,
+        score: 100,
+        detectedTenses: [
+          { text: sentence, tense: 'present', aspect: 'simple', explanation: 'Grammar checking requires active GEMINI_API_KEY configured in Settings panel.' }
+        ],
+        issues: [],
+        verbAnalysis: []
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Perform a detailed English grammar, tense, and conjugation analysis on the following text: "${sentence}".
+      Analyze if there are any grammatical, orthographical, or syntactic mistakes.
+      Determine its overall correctness score (0 to 100), corrected text, specific issues, detected English tenses (past/present/future with simple/continuous/perfect/perfect_continuous aspect), and action verbs.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isValid: { type: Type.BOOLEAN, description: 'Is the sentence grammatically correct with zero mistakes?' },
+            originalText: { type: Type.STRING },
+            correctedText: { type: Type.STRING, description: 'The fully corrected version of the input sentence. Empty or same if already perfect.' },
+            score: { type: Type.INTEGER, description: 'Grammar score from 0 (very corrupted) to 100 (flawless).' },
+            detectedTenses: {
+              type: Type.ARRAY,
+              description: 'Tenses used in the text.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  text: { type: Type.STRING, description: 'The clause or phrase exhibiting this tense' },
+                  tense: { type: Type.STRING, description: 'Must be: "past", "present", or "future"' },
+                  aspect: { type: Type.STRING, description: 'Must be: "simple", "continuous", "perfect", or "perfect_continuous"' },
+                  explanation: { type: Type.STRING, description: 'Why this tense aspect is used in this context' }
+                },
+                required: ["text", "tense", "aspect", "explanation"]
+              }
+            },
+            issues: {
+              type: Type.ARRAY,
+              description: 'Specific grammatic errors, typos, or style improvements.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  original: { type: Type.STRING, description: 'Incorrect substring / mistake' },
+                  correction: { type: Type.STRING, description: 'Corrected form' },
+                  explanation: { type: Type.STRING, description: 'Reason for the mistake/correction' }
+                },
+                required: ["original", "correction", "explanation"]
+              }
+            },
+            verbAnalysis: {
+              type: Type.ARRAY,
+              description: 'Analysis of key action and state verbs present in the sentence.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  verb: { type: Type.STRING, description: 'Verb as written in the text' },
+                  tenseUsed: { type: Type.STRING, description: 'What tense is applied to this verb' },
+                  baseForm: { type: Type.STRING, description: 'Infinitive base form of this verb (V1)' },
+                  aspect: { type: Type.STRING, description: 'Aspect used (Simple, Continuous, Perfect)' }
+                },
+                required: ["verb", "tenseUsed", "baseForm", "aspect"]
+              }
+            }
+          },
+          required: ["isValid", "originalText", "score", "detectedTenses", "issues", "verbAnalysis"]
+        }
+      }
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+      throw new Error("No response output from Gemini API");
+    }
+
+    const data = JSON.parse(responseText.trim());
+    return res.json(data);
+  } catch (err: any) {
+    console.error('Error in /api/grammar-check route:', err);
+    res.status(500).json({ error: err.message || 'Failed to analyze text' });
+  }
+});
+
+// Configure Vite middleware and static serving
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running at http://localhost:${PORT}`);
+  });
+}
+
+startServer();

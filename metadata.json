@@ -1,0 +1,8 @@
+{
+  "name": "Verb Conjugator & Grammar Analyzer",
+  "description": "An interactive language dashboard featuring a heat-map style conjugation matrix, multi-aspect alignments, and a real-time sentence grammar analysis engine with feedback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
