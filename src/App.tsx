@@ -155,7 +155,7 @@ export default function App() {
           {/* Mobile header version (Visible on screens smaller than lg) */}
           <div className="flex lg:hidden justify-center items-center w-full py-1">
             <h1 className="text-xl font-extrabold tracking-wide text-stone-900 font-sans">
-              Engoo
+              engooo
             </h1>
           </div>
         </div>
