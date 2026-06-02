@@ -48,10 +48,80 @@ export const IRREGULAR_VERBS: Record<string, Omit<VerbForm, 'isIrregular'>> = {
 };
 
 /**
+ * Resolves the true base (infinitive) form of a verb, even if it is entered as an inflected form.
+ */
+export function getBaseForm(input: string): string {
+  const word = input.trim().toLowerCase();
+  
+  // 1. Direct irregular check
+  if (IRREGULAR_VERBS[word]) return word;
+  
+  // 2. Scan irregular forms to see if it is an inflected form of an irregular verb
+  for (const base in IRREGULAR_VERBS) {
+    const forms = IRREGULAR_VERBS[base];
+    const v2s = forms.v2.split('/');
+    const v5s = forms.v5.split('/');
+    if (
+      forms.v1 === word ||
+      v2s.includes(word) ||
+      forms.v3 === word ||
+      forms.v4 === word ||
+      v5s.includes(word)
+    ) {
+      return base;
+    }
+  }
+  
+  // 3. Regular verb inflection heuristics
+  // Present participle (-ing)
+  if (word.endsWith('ing') && word.length > 5) {
+    let base = word.slice(0, -3);
+    // Doubled consonant check (e.g. running -> run, planning -> plan)
+    if (base.length > 3 && base.slice(-1) === base.slice(-2, -1) && !isVowel(base.slice(-1))) {
+      base = base.slice(0, -1);
+    }
+    // tying -> tie
+    if (word.endsWith('ying') && word.length >= 5) {
+      return word.slice(0, -4) + 'ie';
+    }
+    return base;
+  }
+  
+  // Past simple/participle (-ed)
+  if (word.endsWith('ed') && word.length > 4) {
+    if (word.endsWith('ied')) {
+      return word.slice(0, -3) + 'y';
+    }
+    let base = word.slice(0, -2);
+    // Doubled consonant (e.g., planned -> plan)
+    if (base.length > 3 && base.slice(-1) === base.slice(-2, -1) && !isVowel(base.slice(-1))) {
+      base = base.slice(0, -1);
+    }
+    return base;
+  }
+  
+  // Third-person singular (-s / -es)
+  if (word.endsWith('s') && word.length > 3) {
+    if (word.endsWith('ies')) {
+      return word.slice(0, -3) + 'y';
+    }
+    if (word.endsWith('es')) {
+      const base = word.slice(0, -2);
+      if (base.endsWith('sh') || base.endsWith('ch') || base.endsWith('x') || base.endsWith('z') || base.endsWith('ss')) {
+        return base;
+      }
+    }
+    return word.slice(0, -1);
+  }
+  
+  return word;
+}
+
+/**
  * Perform a grammar-rule based regular conjugation for a verb word
  */
 export function conjugateRegular(rawVerb: string): VerbForm {
-  const v1 = rawVerb.trim().toLowerCase();
+  const v1 = getBaseForm(rawVerb);
   
   // Check irregular dictionary first
   if (IRREGULAR_VERBS[v1]) {

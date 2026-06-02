@@ -64,7 +64,7 @@ app.post('/api/conjugate', async (req, res) => {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Provide the first, second, third, present participle, and third-person singular forms for the English verb: "${cleanVerb}". Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false.`,
+        contents: `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb. Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false.`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {

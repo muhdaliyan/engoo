@@ -68,7 +68,6 @@ export default function App() {
   // Initial conjugation load
   useEffect(() => {
     handleConjugate(verbInput);
-    handleGrammarCheck(sentenceInput);
   }, []);
 
   const handleConjugate = async (verb: string) => {
