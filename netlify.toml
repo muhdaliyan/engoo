@@ -32,6 +32,13 @@
   status = 200
   force = true
 
+# Route /api/verify-pass → Netlify Function
+[[redirects]]
+  from = "/api/verify-pass"
+  to = "/.netlify/functions/verify-pass"
+  status = 200
+  force = true
+
 # SPA routing redirect rule (must come LAST):
 # Rewrites all other requests to /index.html for React Router.
 [[redirects]]

@@ -1,5 +1,4 @@
 import type { Context } from "@netlify/functions";
-import { GoogleGenAI, Type } from "@google/genai";
 
 export default async (req: Request, _context: Context) => {
   if (req.method !== "POST") {
@@ -30,22 +29,20 @@ export default async (req: Request, _context: Context) => {
     );
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return new Response(
       JSON.stringify({
         hasGrammarIssue: false,
         grammarNote: { original: "", corrected: "", issueType: "", explanation: "" },
         reply:
-          "I need a GEMINI_API_KEY to chat. Please set it in your Netlify environment variables and redeploy.",
+          "I need an OPENAI_API_KEY to chat. Please set it in your Netlify environment variables and redeploy.",
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
-
     const historyText = messages
       .slice(-12) // Keep last 12 messages for context
       .map((m) => `${m.role === "user" ? "User" : "Agent"}: ${m.content}`)
@@ -62,63 +59,54 @@ Your two tasks every turn:
 Conversation history:
 ${historyText || "(conversation just started)"}
 
-User's latest message: "${userMessage}"`;
+User's latest message: "${userMessage}"
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hasGrammarIssue: {
-              type: Type.BOOLEAN,
-              description: "True if the user made a grammar mistake, false if the message is correct.",
-            },
-            grammarNote: {
-              type: Type.OBJECT,
-              description: "Grammar correction details. Always present; check hasGrammarIssue before displaying.",
-              properties: {
-                original: {
-                  type: Type.STRING,
-                  description: "The incorrect phrase or sentence as the user wrote it. Empty string if no issue.",
-                },
-                corrected: {
-                  type: Type.STRING,
-                  description: "The grammatically correct version. Empty string if no issue.",
-                },
-                issueType: {
-                  type: Type.STRING,
-                  description: "Short label for the grammar rule violated, e.g. 'Present Continuous', 'Past Simple'. Empty string if no issue.",
-                },
-                explanation: {
-                  type: Type.STRING,
-                  description: "1-2 sentences explaining why the correction is needed and the tense/rule involved. Empty string if no issue.",
-                },
-              },
-              required: ["original", "corrected", "issueType", "explanation"],
-            },
-            reply: {
-              type: Type.STRING,
-              description: "Your warm, natural conversational reply to the user. 1-3 sentences.",
-            },
-          },
-          required: ["hasGrammarIssue", "grammarNote", "reply"],
-        },
+You MUST respond with a JSON object matching this schema:
+{
+  "hasGrammarIssue": boolean,
+  "grammarNote": {
+    "original": string, // The incorrect phrase or sentence as the user wrote it. Empty string if no issue.
+    "corrected": string, // The grammatically correct version. Empty string if no issue.
+    "issueType": string, // Short label for the grammar rule violated, e.g. 'Present Continuous', 'Past Simple'. Empty string if no issue.
+    "explanation": string // 1-2 sentences explaining why the correction is needed and the tense/rule involved. Empty string if no issue.
+  },
+  "reply": string // Your warm, natural conversational reply to the user. 1-3 sentences.
+}`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
       },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a warm, friendly English conversation partner and grammar tutor. You must reply ONLY with a valid JSON object matching the requested schema." },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+      }),
     });
 
-    const responseText = response.text;
-    if (!responseText) throw new Error("No response from Gemini");
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
 
-    const data = JSON.parse(responseText.trim());
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("No response from OpenAI");
+    }
+
+    const parsedData = JSON.parse(content.trim());
 
     return new Response(
       JSON.stringify({
-        hasGrammarIssue: data.hasGrammarIssue,
-        grammarNote: data.hasGrammarIssue ? data.grammarNote : null,
-        reply: data.reply,
+        hasGrammarIssue: parsedData.hasGrammarIssue,
+        grammarNote: parsedData.hasGrammarIssue ? parsedData.grammarNote : null,
+        reply: parsedData.reply,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );

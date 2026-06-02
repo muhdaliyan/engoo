@@ -7,7 +7,6 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
 import { conjugateRegular } from './src/conjugator';
 
 dotenv.config();
@@ -15,33 +14,48 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Initialize Google Gemini Client on the server
-const apiKey = process.env.GEMINI_API_KEY;
-let aiClient: GoogleGenAI | null = null;
+// Initialize OpenAI API Key on the server
+const apiKey = process.env.OPENAI_API_KEY;
 
-function getGeminiClient() {
-  if (!aiClient) {
-    if (!apiKey) {
-      console.warn("WARNING: GEMINI_API_KEY environment variable is not set. All AI operations will be skipped or simulated.");
-      return null;
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
+if (!apiKey) {
+  console.warn("WARNING: OPENAI_API_KEY environment variable is not set. All AI operations will be skipped or simulated.");
+}
+
+async function callOpenAI(messages: { role: string; content: string }[]) {
+  if (!apiKey) {
+    return null;
   }
-  return aiClient;
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('Empty response from OpenAI');
+  }
+  return content;
 }
 
 app.use(express.json());
 
 // API endpoints
 
-// Verb conjugation endpoint - merges fast local heuristic with smart Gemini check
+// Verb conjugation endpoint - merges fast local heuristic with smart OpenAI check
 app.post('/api/conjugate', async (req, res) => {
   try {
     const { verb } = req.body;
@@ -55,67 +69,47 @@ app.post('/api/conjugate', async (req, res) => {
     const localResult = conjugateRegular(cleanVerb);
 
     // If no API key is present, return the local rule-based result immediately
-    const ai = getGeminiClient();
-    if (!ai) {
+    if (!apiKey) {
       return res.json(localResult);
     }
 
-    // Otherwise, we query Gemini to get the custom tense grid
+    // Otherwise, we query OpenAI to get the custom tense grid
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb. Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false. Also, generate the list of all 12 English tense conjugations (aiConjugations) customized specifically for this verb, including structural formulas displaying the verb, usage explanations, and examples for each of the subject pronouns: 'I', 'You', 'He/She/It', 'We', 'They'.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              v1: { type: Type.STRING, description: "Base / Infinitive form. e.g. write, play" },
-              v2: { type: Type.STRING, description: "Past simple form (V2). e.g. wrote, played" },
-              v3: { type: Type.STRING, description: "Past participle form (V3). e.g. written, played" },
-              v4: { type: Type.STRING, description: "Present participle (-ing) form. e.g. writing, playing" },
-              v5: { type: Type.STRING, description: "Third person singular (-s/-es) form. e.g. writes, plays" },
-              isIrregular: { type: Type.BOOLEAN, description: "Is this verb classified as an irregular verb in English?" },
-              aiConjugations: {
-                type: Type.ARRAY,
-                description: "Complete list of 12 English tenses customized specifically for this verb.",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    tense: { type: Type.STRING, description: "Must be: 'past', 'present', or 'future'" },
-                    aspect: { type: Type.STRING, description: "Must be: 'simple', 'continuous', 'perfect', or 'perfect_continuous'" },
-                    formula: { type: Type.STRING, description: "Tense formula showing the active verb. e.g. 'Subject + write/writes'" },
-                    explanation: { type: Type.STRING, description: "Detailed explanation of why this verb is used in this tense." },
-                    examples: {
-                      type: Type.ARRAY,
-                      description: "List of example sentences for each subject pronoun ('I', 'You', 'He/She/It', 'We', 'They').",
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          subject: { type: Type.STRING, description: "One of: 'I', 'You', 'He/She/It', 'We', 'They'" },
-                          text: { type: Type.STRING, description: "Complete, natural sentence using the verb and subject. e.g. 'I write in my journal.'" },
-                          helper: { type: Type.STRING, description: "Optional main auxiliary verbs highlighted. e.g. 'write'" }
-                        },
-                        required: ["subject", "text"]
-                      }
-                    }
-                  },
-                  required: ["tense", "aspect", "formula", "explanation", "examples"]
-                }
-              }
-            },
-            required: ["v1", "v2", "v3", "v4", "v5", "isIrregular", "aiConjugations"]
-          }
-        }
-      });
+      const prompt = `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb.
+Also, generate the list of all 12 English tense conjugations (aiConjugations) customized specifically for this verb, including structural formulas displaying the verb, usage explanations, and examples for each of the subject pronouns: 'I', 'You', 'He/She/It', 'We', 'They'.
 
-      const responseText = response.text;
+You MUST respond with a JSON object matching this schema:
+{
+  "v1": string, // Base / Infinitive form. e.g. write, play
+  "v2": string, // Past simple form (V2). e.g. wrote, played
+  "v3": string, // Past participle form (V3). e.g. written, played
+  "v4": string, // Present participle (-ing) form. e.g. writing, playing
+  "v5": string, // Third person singular (-s/-es) form. e.g. writes, plays
+  "isIrregular": boolean, // Is this verb classified as an irregular verb in English?
+  "aiConjugations": Array<{
+    "tense": "past" | "present" | "future",
+    "aspect": "simple" | "continuous" | "perfect" | "perfect_continuous",
+    "formula": string, // Tense formula showing the active verb. e.g. 'Subject + write/writes'
+    "explanation": string, // Detailed explanation of why this verb is used in this tense.
+    "examples": Array<{
+      "subject": "I" | "You" | "He/She/It" | "We" | "They",
+      "text": string, // Complete, natural sentence using the verb and subject. e.g. 'I write in my journal.'
+      "helper": string // Optional main auxiliary verbs highlighted. e.g. 'write'
+    }>
+  }>
+}`;
+
+      const responseText = await callOpenAI([
+        { role: 'system', content: 'You are a professional English linguist. You must reply ONLY with a valid JSON object matching the requested schema.' },
+        { role: 'user', content: prompt }
+      ]);
+
       if (responseText) {
         const data = JSON.parse(responseText.trim());
         return res.json(data);
       }
     } catch (apiError) {
-      console.error('Gemini conjugation failed, falling back to rule-based logic:', apiError);
+      console.error('OpenAI conjugation failed, falling back to rule-based logic:', apiError);
     }
 
     // Fallback to local rule-based results in case of error
@@ -134,12 +128,11 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'userMessage is required' });
     }
 
-    const ai = getGeminiClient();
-    if (!ai) {
+    if (!apiKey) {
       return res.json({
         hasGrammarIssue: false,
         grammarNote: null,
-        reply: 'Grammar checking requires GEMINI_API_KEY to be configured.',
+        reply: 'Grammar checking requires OPENAI_API_KEY to be configured.',
       });
     }
 
@@ -161,36 +154,26 @@ Your two tasks every turn:
 Conversation history:
 ${historyText || '(conversation just started)'}
 
-User's latest message: "${userMessage}"`;
+User's latest message: "${userMessage}"
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hasGrammarIssue: { type: Type.BOOLEAN },
-            grammarNote: {
-              type: Type.OBJECT,
-              properties: {
-                original: { type: Type.STRING },
-                corrected: { type: Type.STRING },
-                issueType: { type: Type.STRING },
-                explanation: { type: Type.STRING },
-              },
-              required: ['original', 'corrected', 'issueType', 'explanation'],
-            },
-            reply: { type: Type.STRING },
-          },
-          required: ['hasGrammarIssue', 'grammarNote', 'reply'],
-        },
-      },
-    });
+You MUST respond with a JSON object matching this schema:
+{
+  "hasGrammarIssue": boolean,
+  "grammarNote": {
+    "original": string, // The incorrect phrase or sentence as the user wrote it. Empty string if no issue.
+    "corrected": string, // The grammatically correct version. Empty string if no issue.
+    "issueType": string, // Short label for the grammar rule violated, e.g. 'Present Continuous', 'Past Simple'. Empty string if no issue.
+    "explanation": string // 1-2 sentences explaining why the correction is needed and the tense/rule involved. Empty string if no issue.
+  },
+  "reply": string // Your warm, natural conversational reply to the user. 1-3 sentences.
+}`;
 
-    const responseText = response.text;
-    if (!responseText) throw new Error('No response from Gemini');
+    const responseText = await callOpenAI([
+      { role: 'system', content: 'You are a warm, friendly English conversation partner and grammar tutor. You must reply ONLY with a valid JSON object matching the requested schema.' },
+      { role: 'user', content: prompt }
+    ]);
+
+    if (!responseText) throw new Error('No response from OpenAI');
 
     const data = JSON.parse(responseText.trim());
     return res.json({
@@ -204,7 +187,7 @@ User's latest message: "${userMessage}"`;
   }
 });
 
-// Sentence grammar check and analysis API endpoint using Gemini
+// Sentence grammar check and analysis API endpoint using OpenAI
 app.post('/api/grammar-check', async (req, res) => {
   try {
     const { sentence } = req.body;
@@ -212,8 +195,7 @@ app.post('/api/grammar-check', async (req, res) => {
       return res.status(400).json({ error: 'Sentence parameter is required' });
     }
 
-    const ai = getGeminiClient();
-    if (!ai) {
+    if (!apiKey) {
       // In absence of API key, provide a friendly warning simulation
       return res.json({
         isValid: true,
@@ -221,77 +203,49 @@ app.post('/api/grammar-check', async (req, res) => {
         correctedText: sentence,
         score: 100,
         detectedTenses: [
-          { text: sentence, tense: 'present', aspect: 'simple', explanation: 'Grammar checking requires active GEMINI_API_KEY configured in Settings panel.' }
+          { text: sentence, tense: 'present', aspect: 'simple', explanation: 'Grammar checking requires active OPENAI_API_KEY configured in Settings panel.' }
         ],
         issues: [],
         verbAnalysis: []
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Perform a detailed English grammar, tense, and conjugation analysis on the following text: "${sentence}".
-      Analyze if there are any grammatical, orthographical, or syntactic mistakes.
-      Determine its overall correctness score (0 to 100), corrected text, specific issues, detected English tenses (past/present/future with simple/continuous/perfect/perfect_continuous aspect), and action verbs.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            isValid: { type: Type.BOOLEAN, description: 'Is the sentence grammatically correct with zero mistakes?' },
-            originalText: { type: Type.STRING },
-            correctedText: { type: Type.STRING, description: 'The fully corrected version of the input sentence. Empty or same if already perfect.' },
-            score: { type: Type.INTEGER, description: 'Grammar score from 0 (very corrupted) to 100 (flawless).' },
-            detectedTenses: {
-              type: Type.ARRAY,
-              description: 'Tenses used in the text.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  text: { type: Type.STRING, description: 'The clause or phrase exhibiting this tense' },
-                  tense: { type: Type.STRING, description: 'Must be: "past", "present", or "future"' },
-                  aspect: { type: Type.STRING, description: 'Must be: "simple", "continuous", "perfect", or "perfect_continuous"' },
-                  explanation: { type: Type.STRING, description: 'Why this tense aspect is used in this context' }
-                },
-                required: ["text", "tense", "aspect", "explanation"]
-              }
-            },
-            issues: {
-              type: Type.ARRAY,
-              description: 'Specific grammatic errors, typos, or style improvements.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  original: { type: Type.STRING, description: 'Incorrect substring / mistake' },
-                  correction: { type: Type.STRING, description: 'Corrected form' },
-                  explanation: { type: Type.STRING, description: 'Reason for the mistake/correction' }
-                },
-                required: ["original", "correction", "explanation"]
-              }
-            },
-            verbAnalysis: {
-              type: Type.ARRAY,
-              description: 'Analysis of key action and state verbs present in the sentence.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  verb: { type: Type.STRING, description: 'Verb as written in the text' },
-                  tenseUsed: { type: Type.STRING, description: 'What tense is applied to this verb' },
-                  baseForm: { type: Type.STRING, description: 'Infinitive base form of this verb (V1)' },
-                  aspect: { type: Type.STRING, description: 'Aspect used (Simple, Continuous, Perfect)' }
-                },
-                required: ["verb", "tenseUsed", "baseForm", "aspect"]
-              }
-            }
-          },
-          required: ["isValid", "originalText", "score", "detectedTenses", "issues", "verbAnalysis"]
-        }
-      }
-    });
+    const prompt = `Perform a detailed English grammar, tense, and conjugation analysis on the following text: "${sentence}".
+Analyze if there are any grammatical, orthographical, or syntactic mistakes.
+Determine its overall correctness score (0 to 100), corrected text, specific issues, detected English tenses (past/present/future with simple/continuous/perfect/perfect_continuous aspect), and action verbs.
 
-    const responseText = response.text;
+You MUST respond with a JSON object matching this schema:
+{
+  "isValid": boolean, // Is the sentence grammatically correct with zero mistakes?
+  "originalText": string,
+  "correctedText": string, // The fully corrected version of the input sentence. Empty or same if already perfect.
+  "score": number, // Grammar score from 0 (very corrupted) to 100 (flawless).
+  "detectedTenses": Array<{
+    "text": string, // The clause or phrase exhibiting this tense
+    "tense": "past" | "present" | "future",
+    "aspect": "simple" | "continuous" | "perfect" | "perfect_continuous",
+    "explanation": string // Why this tense aspect is used in this context
+  }>,
+  "issues": Array<{
+    "original": string, // Incorrect substring / mistake
+    "correction": string, // Corrected form
+    "explanation": string // Reason for the mistake/correction
+  }>,
+  "verbAnalysis": Array<{
+    "verb": string, // Verb as written in the text
+    "tenseUsed": string, // What tense is applied to this verb
+    "baseForm": string, // Infinitive base form of this verb (V1)
+    "aspect": string // Aspect used (Simple, Continuous, Perfect)
+  }>
+}`;
+
+    const responseText = await callOpenAI([
+      { role: 'system', content: 'You are an advanced English grammar analyzer. You must reply ONLY with a valid JSON object matching the requested schema.' },
+      { role: 'user', content: prompt }
+    ]);
+
     if (!responseText) {
-      throw new Error("No response output from Gemini API");
+      throw new Error("No response output from OpenAI API");
     }
 
     const data = JSON.parse(responseText.trim());
@@ -300,6 +254,16 @@ app.post('/api/grammar-check', async (req, res) => {
     console.error('Error in /api/grammar-check route:', err);
     res.status(500).json({ error: err.message || 'Failed to analyze text' });
   }
+});
+
+// Verification endpoint for App Passcode
+app.post('/api/verify-pass', (req, res) => {
+  const { password } = req.body;
+  const correctPass = process.env.ENTER_PASS || 'engooo@03495144509';
+  if (password === correctPass) {
+    return res.json({ success: true });
+  }
+  return res.status(401).json({ success: false, error: 'Incorrect password' });
 });
 
 // Configure Vite middleware and static serving

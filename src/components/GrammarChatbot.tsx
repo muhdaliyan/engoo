@@ -82,7 +82,7 @@ export default function GrammarChatbot() {
           id: `err-${Date.now()}`,
           role: 'assistant',
           content:
-            "Sorry, I couldn't connect right now. Please check your GEMINI_API_KEY in Netlify environment variables.",
+            "Sorry, I couldn't connect right now. Please check your OPENAI_API_KEY in Netlify environment variables.",
           grammarNote: null,
         },
       ]);

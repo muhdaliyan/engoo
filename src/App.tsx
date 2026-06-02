@@ -16,7 +16,11 @@ import {
   Award,
   AlertTriangle,
   Info,
-  MessageCircle
+  MessageCircle,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { VerbForm, GrammarAnalysis } from './types';
 import { conjugateRegular } from './conjugator';
@@ -67,6 +71,42 @@ export default function App() {
 
   // Persistent Tab Navigation State
   const [activeTab, setActiveTab] = useState<'explorer' | 'matrix' | 'grammar' | 'talki'>('explorer');
+
+  // Passcode Lock States
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [showPasscode, setShowPasscode] = useState(false);
+  const [verifyingPass, setVerifyingPass] = useState(false);
+  const [passError, setPassError] = useState<string | null>(null);
+
+  const handleVerifyPass = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!passcode.trim()) return;
+    setVerifyingPass(true);
+    setPassError(null);
+    try {
+      const res = await fetch('/api/verify-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passcode.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setIsUnlocked(true);
+        } else {
+          setPassError('Incorrect passcode. Please try again.');
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        setPassError(errorData.error || 'Incorrect passcode. Please try again.');
+      }
+    } catch {
+      setPassError('Network error. Unable to contact verification server.');
+    } finally {
+      setVerifyingPass(false);
+    }
+  };
 
   // Initial conjugation load — local only, instant
   useEffect(() => {
@@ -134,6 +174,88 @@ export default function App() {
     { id: 'grammar', label: 'Grammar AI', icon: Sparkles },
     { id: 'talki', label: 'Talki', icon: MessageCircle },
   ] as const;
+
+  if (!isUnlocked) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 selection:bg-amber-100 selection:text-amber-900" id="lock-screen">
+        {/* Decorative background blurs */}
+        <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-amber-200/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-stone-300/30 rounded-full blur-3xl" />
+
+        <div className="relative w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 sm:p-10 shadow-xl flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 mb-6 relative group overflow-hidden">
+            <div className="absolute inset-0 bg-amber-500/5 group-hover:scale-110 transition-transform duration-500" />
+            <Lock className="w-6 h-6 animate-pulse" />
+          </div>
+
+          <h1 className="text-2xl font-extrabold tracking-tight text-stone-900">
+            Engooo App Locked
+          </h1>
+          <p className="text-xs text-stone-500 mt-2 max-w-xs leading-relaxed">
+            Please enter your credentials passcode to gain access to the Real-Time Tense Synthesis suite.
+          </p>
+
+          <form onSubmit={handleVerifyPass} className="w-full mt-8 flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5 text-left">
+              <label className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider" htmlFor="passcode-input">
+                Access Passcode
+              </label>
+              <div className="relative">
+                <input
+                  id="passcode-input"
+                  type={showPasscode ? 'text' : 'password'}
+                  value={passcode}
+                  onChange={(e) => {
+                    setPasscode(e.target.value);
+                    if (passError) setPassError(null);
+                  }}
+                  autoFocus
+                  placeholder="••••••••••••"
+                  className="w-full pl-10 pr-10 py-3 rounded-xl border border-stone-200 font-mono text-sm bg-stone-50/50 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-stone-800"
+                />
+                <KeyRound className="w-4 h-4 text-stone-400 absolute left-3.5 top-3.5" />
+                <button
+                  type="button"
+                  onClick={() => setShowPasscode(!showPasscode)}
+                  className="absolute right-3 top-3.5 text-stone-400 hover:text-stone-750 transition-colors cursor-pointer flex items-center justify-center"
+                  title={showPasscode ? 'Hide Passcode' : 'Show Passcode'}
+                >
+                  {showPasscode ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {passError && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex gap-2 items-start text-left text-red-800 animate-fade-in" id="pass-error-msg">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-xs font-semibold leading-snug">{passError}</p>
+              </div>
+            )}
+
+            <button
+              id="btn-verify-passcode"
+              type="submit"
+              disabled={verifyingPass || !passcode}
+              className="w-full py-3.5 bg-stone-900 hover:bg-stone-850 text-white font-semibold rounded-xl text-sm transition-all focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer mt-2 min-h-[48px]"
+            >
+              {verifyingPass ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                  <span>Unlocking Suite...</span>
+                </>
+              ) : (
+                <span>Unlock Application</span>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`bg-[#fafaf8] text-stone-900 flex flex-col font-sans selection:bg-amber-100 selection:text-amber-900 ${
