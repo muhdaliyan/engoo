@@ -25,6 +25,13 @@
   status = 200
   force = true
 
+# Route /api/chat → Netlify Function
+[[redirects]]
+  from = "/api/chat"
+  to = "/.netlify/functions/chat"
+  status = 200
+  force = true
+
 # SPA routing redirect rule (must come LAST):
 # Rewrites all other requests to /index.html for React Router.
 [[redirects]]

@@ -126,6 +126,84 @@ app.post('/api/conjugate', async (req, res) => {
   }
 });
 
+// English Conversation Partner chatbot endpoint with grammar correction
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { messages, userMessage } = req.body;
+    if (!userMessage || typeof userMessage !== 'string') {
+      return res.status(400).json({ error: 'userMessage is required' });
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.json({
+        hasGrammarIssue: false,
+        grammarNote: null,
+        reply: 'Grammar checking requires GEMINI_API_KEY to be configured.',
+      });
+    }
+
+    const historyText = (messages || [])
+      .slice(-12)
+      .map((m: { role: string; content: string }) =>
+        `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`
+      )
+      .join('\n');
+
+    const prompt = `You are a warm, friendly English conversation partner and grammar tutor.
+
+Your two tasks every turn:
+1. CHECK the user's latest message for ANY grammar mistakes (wrong tense, wrong verb form, missing auxiliary, subject-verb disagreement, wrong preposition, etc.)
+   - If there IS a mistake: fill grammarNote with the original phrase, the corrected version, a short label for the issue type (e.g. "Present Continuous", "Past Simple", "Subject-Verb Agreement"), and a clear 1-2 sentence explanation mentioning the grammar rule and tense.
+   - If the message is perfectly correct: set hasGrammarIssue to false and still fill grammarNote fields with empty strings (the schema requires the object).
+2. REPLY naturally and warmly as a human friend who happens to be an English expert. Keep your reply conversational (1-3 sentences), respond directly to what the user said, and ask a relevant follow-up question to keep the conversation going.
+
+Conversation history:
+${historyText || '(conversation just started)'}
+
+User's latest message: "${userMessage}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            hasGrammarIssue: { type: Type.BOOLEAN },
+            grammarNote: {
+              type: Type.OBJECT,
+              properties: {
+                original: { type: Type.STRING },
+                corrected: { type: Type.STRING },
+                issueType: { type: Type.STRING },
+                explanation: { type: Type.STRING },
+              },
+              required: ['original', 'corrected', 'issueType', 'explanation'],
+            },
+            reply: { type: Type.STRING },
+          },
+          required: ['hasGrammarIssue', 'grammarNote', 'reply'],
+        },
+      },
+    });
+
+    const responseText = response.text;
+    if (!responseText) throw new Error('No response from Gemini');
+
+    const data = JSON.parse(responseText.trim());
+    return res.json({
+      hasGrammarIssue: data.hasGrammarIssue,
+      grammarNote: data.hasGrammarIssue ? data.grammarNote : null,
+      reply: data.reply,
+    });
+  } catch (err: any) {
+    console.error('Error in /api/chat route:', err);
+    res.status(500).json({ error: err.message || 'Chat failed' });
+  }
+});
+
 // Sentence grammar check and analysis API endpoint using Gemini
 app.post('/api/grammar-check', async (req, res) => {
   try {

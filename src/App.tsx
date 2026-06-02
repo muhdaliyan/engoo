@@ -15,11 +15,13 @@ import {
   TrendingUp,
   Award,
   AlertTriangle,
-  Info
+  Info,
+  MessageCircle
 } from 'lucide-react';
 import { VerbForm, GrammarAnalysis } from './types';
 import { conjugateRegular } from './conjugator';
 import ConjugationMatrix from './components/ConjugationMatrix';
+import GrammarChatbot from './components/GrammarChatbot';
 
 const SUGGESTED_VERBS = ['be', 'have', 'write', 'go', 'eat', 'see', 'speak', 'run', 'build', 'drive'];
 
@@ -55,6 +57,7 @@ export default function App() {
   });
   const [selectedSubject, setSelectedSubject] = useState('I');
   const [conjugating, setConjugating] = useState(false);
+  const [aiGridLoading, setAiGridLoading] = useState(false);
 
   // Grammar Checker States
   const [sentenceInput, setSentenceInput] = useState('He have been wrote a letter yesterday.');
@@ -63,35 +66,40 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Persistent Tab Navigation State
-  const [activeTab, setActiveTab] = useState<'explorer' | 'matrix' | 'grammar'>('explorer');
+  const [activeTab, setActiveTab] = useState<'explorer' | 'matrix' | 'grammar' | 'talki'>('explorer');
 
-  // Initial conjugation load
+  // Initial conjugation load — local only, instant
   useEffect(() => {
     handleConjugate(verbInput);
   }, []);
 
-  const handleConjugate = async (verb: string) => {
+  // V1–V5 display: local rule-based only, no API call
+  const handleConjugate = (verb: string) => {
     if (!verb.trim()) return;
     setConjugating(true);
+    setActiveVerb(conjugateRegular(verb.trim()));
+    setConjugating(false);
+  };
+
+  // AI Grid: calls /api/conjugate for full Gemini-powered data, then navigates to matrix
+  const handleAIGrid = async () => {
+    if (!activeVerb.v1) return;
+    setAiGridLoading(true);
     try {
       const response = await fetch('/api/conjugate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ verb: verb.trim() }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verb: activeVerb.v1 }),
       });
       if (response.ok) {
         const data = await response.json();
         setActiveVerb(data);
-      } else {
-        // Fallback to local
-        setActiveVerb(conjugateRegular(verb));
       }
     } catch {
-      setActiveVerb(conjugateRegular(verb));
+      // keep current local data on failure
     } finally {
-      setConjugating(false);
+      setAiGridLoading(false);
+      setActiveTab('matrix');
     }
   };
 
@@ -124,10 +132,13 @@ export default function App() {
     { id: 'explorer', label: 'Verb Explorer', icon: Search },
     { id: 'matrix', label: 'Tense Grid', icon: BookOpen },
     { id: 'grammar', label: 'Grammar AI', icon: Sparkles },
+    { id: 'talki', label: 'Talki', icon: MessageCircle },
   ] as const;
 
   return (
-    <div className="min-h-screen bg-[#fafaf8] text-stone-900 flex flex-col font-sans selection:bg-amber-100 selection:text-amber-900" id="app-root">
+    <div className={`bg-[#fafaf8] text-stone-900 flex flex-col font-sans selection:bg-amber-100 selection:text-amber-900 ${
+      activeTab === 'talki' ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`} id="app-root">
       {/* Elegantly Spaced Top Header */}
       <header className="border-b border-stone-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-40 px-6 py-4" id="app-header">
         <div className="max-w-7xl mx-auto">
@@ -215,7 +226,14 @@ export default function App() {
       </div>
 
       {/* Main Dynamic Workspace Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6 pb-24 lg:pb-8" id="app-main">
+      <main
+        className={`flex-1 w-full mx-auto flex flex-col ${
+          activeTab === 'talki'
+            ? 'p-0 max-w-none overflow-hidden pb-[72px] lg:pb-0'
+            : 'max-w-7xl p-4 sm:p-6 lg:p-8 gap-6 pb-24 lg:pb-8'
+        }`}
+        id="app-main"
+      >
 
         {/* TAB 1: Verb Explorer (Level 1, Part 1) */}
         {activeTab === 'explorer' && (
@@ -342,13 +360,37 @@ export default function App() {
               </span>
             </div>
 
-            <button
-              onClick={() => setActiveTab('matrix')}
-              className="mt-2 w-max self-end px-5 py-2.5 bg-stone-900 hover:bg-stone-850 text-white font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ml-auto"
-            >
-              <span>View Conjugation Grid for "{activeVerb.v1.toUpperCase()}"</span>
-              <span>&rarr;</span>
-            </button>
+            <div className="mt-2 flex items-center gap-2.5 ml-auto">
+              {/* AI Grid button — calls /api/conjugate for Gemini-powered conjugation */}
+              <button
+                id="btn-ai-grid"
+                onClick={handleAIGrid}
+                disabled={aiGridLoading}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                {aiGridLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Loading AI…</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>AI Grid</span>
+                  </>
+                )}
+              </button>
+
+              {/* Generic Grid button — local data only, instant */}
+              <button
+                id="btn-generic-grid"
+                onClick={() => setActiveTab('matrix')}
+                className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                <span>Generic Grid for "{activeVerb.v1.toUpperCase()}"</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
           </section>
         )}
 
@@ -408,9 +450,9 @@ export default function App() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="grammar-analyzer-grid">
-              {/* Input Segment */}
-              <div className="lg:col-span-5 flex flex-col gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" id="grammar-analyzer-grid">
+              {/* ── Left Panel: Grammar Analyzer ── */}
+              <div className="flex flex-col gap-4">
                 <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-2xs flex flex-col gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-stone-700" htmlFor="sentence-search-input">
@@ -488,7 +530,7 @@ export default function App() {
               </div>
 
               {/* Response Analysis Segment (Results render here) */}
-              <div className="lg:col-span-7 flex flex-col gap-4">
+              <div className="flex flex-col gap-4">
                 {analyzing ? (
                   <div
                     className="bg-white border border-stone-200 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-3 h-full min-h-[300px] transition-all duration-300 animate-pulse"
@@ -694,21 +736,30 @@ export default function App() {
           </section>
         )}
 
+        {/* TAB 4: Talki (Level 3) */}
+        {activeTab === 'talki' && (
+          <div className="flex-1 flex flex-col h-full w-full overflow-hidden" id="talki-section">
+            <GrammarChatbot />
+          </div>
+        )}
+
       </main>
 
       {/* Persistent Static Desk Footer */}
-      <footer className="border-t border-stone-200/60 bg-white/80 backdrop-blur-md px-6 py-6 mt-12 mb-20 md:mb-0" id="app-footer">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+      {activeTab !== 'talki' && (
+        <footer className="border-t border-stone-200/60 bg-white/80 backdrop-blur-md px-6 py-6 mt-12 mb-20 md:mb-0" id="app-footer">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-stone-400 font-mono">
+                Dashboard layout • Heat Map Aspect complexity visualization
+              </span>
+            </div>
             <span className="text-xs text-stone-400 font-mono">
-              Dashboard layout • Heat Map Aspect complexity visualization
+              Tense & Agreement Toolset • AI Studio Native Integration
             </span>
           </div>
-          <span className="text-xs text-stone-400 font-mono">
-            Tense & Agreement Toolset • AI Studio Native Integration
-          </span>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

@@ -199,35 +199,37 @@ export default function ConjugationMatrix({
                             setIsModalOpen(true);
                           }}
                           id={`heatmap-cell-${key}`}
-                          className={`p-3.5 cursor-pointer transition-all duration-200 align-top border border-stone-300 ${
+                          className={`p-3.5 cursor-pointer transition-all duration-200 align-top border border-stone-300 w-[29%] ${
                             isSelected
                               ? 'ring-2 ring-cyan-500 bg-cyan-50/80 border-cyan-200 relative z-10'
                               : 'bg-white hover:bg-stone-50/60'
                           }`}
                         >
-                          <div className="flex flex-col gap-1.5 justify-between h-full min-h-[96px]">
-                            {/* Cell Formula Block */}
-                            <div>
-                              <div
-                                className="text-xs text-stone-850 font-semibold font-mono"
-                                dangerouslySetInnerHTML={{ __html: formatFormula(cell.formula) }}
-                              />
-                            </div>
+                          <div className="flex flex-col gap-1.5">
+                            {/* Cell Formula Block — clamped to 1 line */}
+                            <div
+                              className="text-xs text-stone-850 font-semibold font-mono truncate"
+                              title={cell.formula}
+                              dangerouslySetInnerHTML={{ __html: formatFormula(cell.formula) }}
+                            />
 
-                            {/* Conjugated Active Output */}
-                            <div className="mt-1 bg-stone-50 border border-stone-200/80 p-2 rounded shadow-3xs">
-                              <span className="text-xs font-bold text-stone-900 block truncate leading-tight">
+                            {/* Conjugated Active Output — clamped to 2 lines */}
+                            <div className="mt-1 bg-stone-50 border border-stone-200/80 p-2 rounded shadow-3xs min-h-[40px]">
+                              <span
+                                className="text-xs font-bold text-stone-900 leading-snug line-clamp-2"
+                                title={cell.examples[0].text}
+                              >
                                 {cell.examples[0].text}
                               </span>
                             </div>
 
                             {/* Aspect indicator */}
-                            <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-stone-200/50">
-                              <span className="text-[9px] font-mono uppercase tracking-wider text-stone-500 font-bold">
+                            <div className="flex items-center justify-between pt-1 border-t border-stone-200/50">
+                              <span className="text-[9px] font-mono uppercase tracking-wider text-stone-500 font-bold truncate max-w-[80%]">
                                 {cell.examples[0].helper || 'plain'}
                               </span>
                               {isSelected && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                               )}
                             </div>
                           </div>
