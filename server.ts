@@ -54,17 +54,17 @@ app.post('/api/conjugate', async (req, res) => {
     // First, look up through our local rule-based system
     const localResult = conjugateRegular(cleanVerb);
 
-    // If it's found locally as a known irregular verb, or if no API key is present, return immediately
+    // If no API key is present, return the local rule-based result immediately
     const ai = getGeminiClient();
-    if (localResult.isIrregular || !ai) {
+    if (!ai) {
       return res.json(localResult);
     }
 
-    // Otherwise, we can double check with Gemini to see if it is a rare irregular or confirm regular forms
+    // Otherwise, we query Gemini to get the custom tense grid
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb. Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false.`,
+        contents: `Identify the true infinitive base form (V1) of the English verb: "${cleanVerb}" (even if it was provided as an inflected form like "running", "wrote", "writes", etc.). Then, provide the first (V1 - base), second (V2 - past simple), third (V3 - past participle), fourth (V4 - present participle), and fifth (V5 - third-person singular) forms for this base verb. Format the output as JSON. Indicate whether it is an irregular verb in English isIrregular: true/false. Also, generate the list of all 12 English tense conjugations (aiConjugations) customized specifically for this verb, including structural formulas displaying the verb, usage explanations, and examples for each of the subject pronouns: 'I', 'You', 'He/She/It', 'We', 'They'.`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
@@ -75,9 +75,36 @@ app.post('/api/conjugate', async (req, res) => {
               v3: { type: Type.STRING, description: "Past participle form (V3). e.g. written, played" },
               v4: { type: Type.STRING, description: "Present participle (-ing) form. e.g. writing, playing" },
               v5: { type: Type.STRING, description: "Third person singular (-s/-es) form. e.g. writes, plays" },
-              isIrregular: { type: Type.BOOLEAN, description: "Is this verb classified as an irregular verb in English?" }
+              isIrregular: { type: Type.BOOLEAN, description: "Is this verb classified as an irregular verb in English?" },
+              aiConjugations: {
+                type: Type.ARRAY,
+                description: "Complete list of 12 English tenses customized specifically for this verb.",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    tense: { type: Type.STRING, description: "Must be: 'past', 'present', or 'future'" },
+                    aspect: { type: Type.STRING, description: "Must be: 'simple', 'continuous', 'perfect', or 'perfect_continuous'" },
+                    formula: { type: Type.STRING, description: "Tense formula showing the active verb. e.g. 'Subject + write/writes'" },
+                    explanation: { type: Type.STRING, description: "Detailed explanation of why this verb is used in this tense." },
+                    examples: {
+                      type: Type.ARRAY,
+                      description: "List of example sentences for each subject pronoun ('I', 'You', 'He/She/It', 'We', 'They').",
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          subject: { type: Type.STRING, description: "One of: 'I', 'You', 'He/She/It', 'We', 'They'" },
+                          text: { type: Type.STRING, description: "Complete, natural sentence using the verb and subject. e.g. 'I write in my journal.'" },
+                          helper: { type: Type.STRING, description: "Optional main auxiliary verbs highlighted. e.g. 'write'" }
+                        },
+                        required: ["subject", "text"]
+                      }
+                    }
+                  },
+                  required: ["tense", "aspect", "formula", "explanation", "examples"]
+                }
+              }
             },
-            required: ["v1", "v2", "v3", "v4", "v5", "isIrregular"]
+            required: ["v1", "v2", "v3", "v4", "v5", "isIrregular", "aiConjugations"]
           }
         }
       });

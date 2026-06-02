@@ -76,8 +76,20 @@ export default function ConjugationMatrix({
   // Modal state for mobile/tablet screens
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Dynamically compute the conjugations based on current settings
+  // Dynamically compute the conjugations based on current settings (using AI-generated structures if available, or local fallback)
   const conjugations = useMemo(() => {
+    if (activeVerb.aiConjugations && activeVerb.aiConjugations.length > 0) {
+      return activeVerb.aiConjugations.map((cell) => {
+        const match = cell.examples.find(
+          (ex) => ex.subject.toLowerCase() === selectedSubject.toLowerCase()
+        ) || cell.examples[0];
+        
+        return {
+          ...cell,
+          examples: [match],
+        };
+      });
+    }
     return getConjugationsForVerb(activeVerb, selectedSubject);
   }, [activeVerb, selectedSubject]);
 

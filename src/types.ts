@@ -13,6 +13,7 @@ export interface VerbForm {
   v4: string; // Present Participle (-ing)
   v5: string; // Third Person Singular (-s / -es)
   isIrregular: boolean;
+  aiConjugations?: ConjugationCell[];
 }
 
 export interface ConjugationCell {

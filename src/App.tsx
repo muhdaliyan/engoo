@@ -344,7 +344,7 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab('matrix')}
-              className="mt-2 w-full py-3 bg-stone-900 hover:bg-stone-850 text-white font-semibold rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              className="mt-2 w-max self-end px-5 py-2.5 bg-stone-900 hover:bg-stone-850 text-white font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ml-auto"
             >
               <span>View Conjugation Grid for "{activeVerb.v1.toUpperCase()}"</span>
               <span>&rarr;</span>
